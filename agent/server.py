@@ -75,6 +75,18 @@ async def health():
     return {"status": "ok", "service": "cargodb", "db": MONGODB_DB}
 
 
+@app.get("/egress-ip")
+async def egress_ip():
+    """Return this container's outbound IP (for Atlas SA allowlist setup)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("https://api.ipify.org?format=json", timeout=5) as r:
+            import json as _json
+            return _json.loads(r.read())
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.post("/run")
 async def run_pipeline(payload: EventPayload) -> dict:
     if _orchestrator is None:
