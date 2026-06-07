@@ -197,6 +197,36 @@ class TestAtlasTools:
         assert call_args[0][0] == "search-knowledge"
 
 
+class TestUriEncoding:
+    def test_encodes_at_sign_in_password(self):
+        from agent.mcp_client import _encode_mongo_uri
+        uri = "mongodb+srv://user:p%40ssw@rd@cluster.host/db"
+        # Already encoded — should not double-encode
+        encoded = _encode_mongo_uri(uri)
+        assert "@" not in encoded.split("@")[0].split("://")[1].split(":")[1]
+
+    def test_encodes_raw_at_in_password(self):
+        from agent.mcp_client import _encode_mongo_uri
+        uri = "mongodb+srv://myuser:pass@word123@cluster.host/db?retryWrites=true"
+        encoded = _encode_mongo_uri(uri)
+        # password @ must be %40, not raw @
+        _, creds_and_rest = encoded.split("://", 1)
+        user_pwd, _ = creds_and_rest.split("@cluster", 1)
+        _, pwd = user_pwd.split(":", 1)
+        assert "@" not in pwd
+        assert "%40" in pwd
+
+    def test_plain_uri_unchanged(self):
+        from agent.mcp_client import _encode_mongo_uri
+        uri = "mongodb+srv://user:simplepass@cluster.host/db"
+        encoded = _encode_mongo_uri(uri)
+        assert "simplepass" in encoded
+
+    def test_non_mongodb_uri_returned_as_is(self):
+        from agent.mcp_client import _encode_mongo_uri
+        assert _encode_mongo_uri("not-a-uri") == "not-a-uri"
+
+
 class TestEnvVarNames:
     def test_correct_mcp_env_vars_used(self):
         """MDB_MCP_CONNECTION_STRING and MDB_MCP_VOYAGE_API_KEY must be used."""

@@ -11,8 +11,20 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 from agent.secrets import get_secret
 
 
+def _encode_mongo_uri(uri: str) -> str:
+    """URL-encode special chars in MongoDB URI credentials (RFC 3986)."""
+    import re
+    from urllib.parse import quote_plus
+    match = re.match(r"(mongodb(?:\+srv)?://)([^:]+):(.+)@(.+)", uri)
+    if not match:
+        return uri
+    scheme, user, pwd, rest = match.groups()
+    return f"{scheme}{quote_plus(user)}:{quote_plus(pwd)}@{rest}"
+
+
 def _build_server_params() -> StdioServerParameters:
     uri = os.environ.get("MONGODB_ATLAS_URI") or get_secret("MONGODB_ATLAS_URI")
+    uri = _encode_mongo_uri(uri)
     voyage_key = os.environ.get("VOYAGE_API_KEY") or get_secret("VOYAGE_API_KEY")
     # Atlas API credentials (optional — needed for Atlas management tools)
     atlas_client_id = os.environ.get("MDB_MCP_API_CLIENT_ID", "")

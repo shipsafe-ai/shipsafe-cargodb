@@ -1,17 +1,39 @@
 """MemoryRecall — retrieves similar decisions via Atlas $vectorSearch.
 
-MCP handles query embedding server-side. Zero embedding code here.
+Query text is embedded via Voyage AI REST API (query-time only).
+Insert-time embedding is handled separately (seed_atlas.py / MemoryWriter).
 """
 from __future__ import annotations
+import json
+import os
+import urllib.request
 from typing import Optional
 
 from agent.config import (
     MONGODB_DB,
     MONGODB_COLLECTION,
     VECTOR_INDEX_NAME,
-    VECTOR_DIMENSIONS,
+    VOYAGE_MODEL,
 )
 from agent.mcp_client import MongoMCPClient
+from agent.secrets import get_secret
+
+
+def _embed_query(text: str) -> list[float]:
+    """Embed a single query string via Voyage AI REST API."""
+    api_key = os.environ.get("VOYAGE_API_KEY") or get_secret("VOYAGE_API_KEY")
+    payload = json.dumps({"model": VOYAGE_MODEL, "input": [text]}).encode()
+    req = urllib.request.Request(
+        "https://api.voyageai.com/v1/embeddings",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    return data["data"][0]["embedding"]
 
 
 class MemoryRecall:
@@ -32,17 +54,21 @@ class MemoryRecall:
         if not query_text or not query_text.strip():
             raise ValueError("query_text must not be empty")
 
+        query_vector = _embed_query(query_text)
+
         vs_stage: dict = {
             "$vectorSearch": {
                 "index": self.vector_index,
-                "queryVector": {"$vectorSearchQuery": query_text},
                 "path": "embedding",
+                "queryVector": query_vector,
                 "numCandidates": top_k * 10,
                 "limit": top_k,
             }
         }
         if decision_type:
-            vs_stage["$vectorSearch"]["filter"] = {"decision_type": {"$eq": decision_type}}
+            vs_stage["$vectorSearch"]["filter"] = {
+                "decision_type": {"$eq": decision_type}
+            }
 
         pipeline = [
             vs_stage,
