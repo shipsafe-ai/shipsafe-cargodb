@@ -6,9 +6,15 @@ from __future__ import annotations
 import os
 
 from agent.config import MONGODB_DB, MONGODB_COLLECTION
-from agent.mcp_client import MongoMCPClient
+from agent.mcp_client import MongoMCPClient, _try_secret
 
-_ATLAS_PROJECT_ID = os.environ.get("ATLAS_PROJECT_ID", "")
+def _get_project_id() -> str:
+    return (
+        os.environ.get("ATLAS_PROJECT_ID")
+        or _try_secret("ATLAS_PROJECT_ID")
+        or ""
+    )
+
 _ATLAS_CLUSTER_NAME = os.environ.get("ATLAS_CLUSTER_NAME", "shipsafe-cluster")
 
 
@@ -22,9 +28,10 @@ class PerformanceAdvisor:
 
     async def get_recommendations(
         self,
-        project_id: str = _ATLAS_PROJECT_ID,
+        project_id: str = "",
         cluster_name: str = _ATLAS_CLUSTER_NAME,
     ) -> dict:
+        project_id = project_id or _get_project_id()
         """Fetch suggested indexes, slow queries, schema suggestions."""
         raw = await self.mcp_client.atlas_performance_advisor(
             project_id=project_id, cluster_name=cluster_name
@@ -55,8 +62,9 @@ class PerformanceAdvisor:
 
     async def get_cluster_alerts(
         self,
-        project_id: str = _ATLAS_PROJECT_ID,
+        project_id: str = "",
     ) -> list[dict]:
+        project_id = project_id or _get_project_id()
         """Fetch active Atlas cluster alerts."""
         if not project_id:
             return []

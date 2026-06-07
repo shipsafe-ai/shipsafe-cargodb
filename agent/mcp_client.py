@@ -11,6 +11,14 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 from agent.secrets import get_secret
 
 
+def _try_secret(name: str) -> str:
+    """Get secret value, return empty string on any error."""
+    try:
+        return get_secret(name)
+    except Exception:
+        return ""
+
+
 def _encode_mongo_uri(uri: str) -> str:
     """URL-encode special chars in MongoDB URI credentials (RFC 3986)."""
     import re
@@ -26,9 +34,15 @@ def _build_server_params() -> StdioServerParameters:
     uri = os.environ.get("MONGODB_ATLAS_URI") or get_secret("MONGODB_ATLAS_URI")
     uri = _encode_mongo_uri(uri)
     voyage_key = os.environ.get("VOYAGE_API_KEY") or get_secret("VOYAGE_API_KEY")
-    # Atlas API credentials (optional — needed for Atlas management tools)
-    atlas_client_id = os.environ.get("MDB_MCP_API_CLIENT_ID", "")
-    atlas_client_secret = os.environ.get("MDB_MCP_API_CLIENT_SECRET", "")
+    # Atlas API credentials — needed for performance advisor + alerts tools
+    atlas_client_id = (
+        os.environ.get("MDB_MCP_API_CLIENT_ID")
+        or _try_secret("MDB_MCP_API_CLIENT_ID")
+    )
+    atlas_client_secret = (
+        os.environ.get("MDB_MCP_API_CLIENT_SECRET")
+        or _try_secret("MDB_MCP_API_CLIENT_SECRET")
+    )
     env = {
         **os.environ,
         "MDB_MCP_CONNECTION_STRING": uri,
