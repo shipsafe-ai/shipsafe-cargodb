@@ -278,6 +278,18 @@ class TestPerformanceEndpoint:
                 os.environ["ATLAS_PROJECT_ID"] = env_bak
 
     @pytest.mark.asyncio
+    async def test_egress_ip_returns_ip(self, client):
+        from unittest.mock import patch, MagicMock
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = b'{"ip":"1.2.3.4"}'
+        fake_resp.__enter__ = lambda s: s
+        fake_resp.__exit__ = MagicMock(return_value=False)
+        with patch("urllib.request.urlopen", return_value=fake_resp):
+            resp = await client.get("/egress-ip")
+        assert resp.status_code == 200
+        assert "ip" in resp.json()
+
+    @pytest.mark.asyncio
     async def test_orchestrator_not_ready_returns_503(self, client):
         import agent.server as server_module
         orig = server_module._orchestrator
