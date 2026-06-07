@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Optional
 
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -14,14 +14,22 @@ from agent.secrets import get_secret
 def _build_server_params() -> StdioServerParameters:
     uri = os.environ.get("MONGODB_ATLAS_URI") or get_secret("MONGODB_ATLAS_URI")
     voyage_key = os.environ.get("VOYAGE_API_KEY") or get_secret("VOYAGE_API_KEY")
+    # Atlas API credentials (optional — needed for Atlas management tools)
+    atlas_client_id = os.environ.get("MDB_MCP_API_CLIENT_ID", "")
+    atlas_client_secret = os.environ.get("MDB_MCP_API_CLIENT_SECRET", "")
+    env = {
+        **os.environ,
+        "MDB_MCP_CONNECTION_STRING": uri,
+        "MDB_MCP_VOYAGE_API_KEY": voyage_key,
+    }
+    if atlas_client_id:
+        env["MDB_MCP_API_CLIENT_ID"] = atlas_client_id
+    if atlas_client_secret:
+        env["MDB_MCP_API_CLIENT_SECRET"] = atlas_client_secret
     return StdioServerParameters(
         command="npx",
         args=["-y", "mongodb-mcp-server"],
-        env={
-            **os.environ,
-            "MDB_CONNECTION_STRING": uri,
-            "VOYAGE_API_KEY": voyage_key,
-        },
+        env=env,
     )
 
 
@@ -51,6 +59,8 @@ class MongoMCPClient:
                 except (json.JSONDecodeError, AttributeError):
                     return raw
             return None
+
+    # ── Core CRUD ────────────────────────────────────────────────────────────
 
     async def insert_many(self, *, documents: list[dict]) -> dict:
         result = await self._call("insert-many", {
@@ -82,12 +92,57 @@ class MongoMCPClient:
             return result
         return result.get("documents", []) if isinstance(result, dict) else []
 
+    # ── Schema & metadata ────────────────────────────────────────────────────
+
     async def collection_schema(self) -> dict:
         result = await self._call("collection-schema", {
             "database": self.db_name,
             "collection": self.collection_name,
         })
         return result if isinstance(result, dict) else {}
+
+    async def collection_indexes(self) -> list[dict]:
+        result = await self._call("collection-indexes", {
+            "database": self.db_name,
+            "collection": self.collection_name,
+        })
+        if isinstance(result, list):
+            return result
+        return result.get("indexes", []) if isinstance(result, dict) else []
+
+    async def create_index(self, *, keys: dict, options: Optional[dict] = None) -> dict:
+        args: dict = {
+            "database": self.db_name,
+            "collection": self.collection_name,
+            "keys": keys,
+        }
+        if options:
+            args["options"] = options
+        result = await self._call("create-index", args)
+        return result if isinstance(result, dict) else {"raw": result}
+
+    async def count(self, *, filter: Optional[dict] = None) -> int:
+        result = await self._call("count", {
+            "database": self.db_name,
+            "collection": self.collection_name,
+            "query": filter or {},
+        })
+        if isinstance(result, int):
+            return result
+        return result.get("count", 0) if isinstance(result, dict) else 0
+
+    async def collection_storage_size(self) -> dict:
+        result = await self._call("collection-storage-size", {
+            "database": self.db_name,
+            "collection": self.collection_name,
+        })
+        return result if isinstance(result, dict) else {}
+
+    async def db_stats(self) -> dict:
+        result = await self._call("db-stats", {"database": self.db_name})
+        return result if isinstance(result, dict) else {}
+
+    # ── Query analysis ───────────────────────────────────────────────────────
 
     async def explain(self, *, query: dict) -> dict:
         result = await self._call("explain", {
@@ -96,3 +151,34 @@ class MongoMCPClient:
             "filter": query,
         })
         return result if isinstance(result, dict) else {}
+
+    # ── Atlas management (requires API credentials) ───────────────────────
+
+    async def atlas_performance_advisor(self, *, project_id: str, cluster_name: str) -> dict:
+        result = await self._call("atlas-get-performance-advisor", {
+            "projectId": project_id,
+            "clusterName": cluster_name,
+        })
+        return result if isinstance(result, dict) else {}
+
+    async def atlas_list_alerts(self, *, project_id: str) -> list[dict]:
+        result = await self._call("atlas-list-alerts", {"projectId": project_id})
+        if isinstance(result, list):
+            return result
+        return result.get("alerts", []) if isinstance(result, dict) else []
+
+    async def atlas_inspect_cluster(self, *, project_id: str, cluster_name: str) -> dict:
+        result = await self._call("atlas-inspect-cluster", {
+            "projectId": project_id,
+            "clusterName": cluster_name,
+        })
+        return result if isinstance(result, dict) else {}
+
+    async def search_knowledge(self, *, query: str, version: Optional[str] = None) -> list[dict]:
+        args: dict = {"query": query}
+        if version:
+            args["version"] = version
+        result = await self._call("search-knowledge", args)
+        if isinstance(result, list):
+            return result
+        return result.get("results", []) if isinstance(result, dict) else []

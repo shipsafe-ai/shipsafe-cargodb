@@ -10,6 +10,8 @@ from agent.server import app
 @pytest.fixture(autouse=True)
 def mock_server_deps():
     """Inject mock specialists into server module globals."""
+    from agent.config import VECTOR_INDEX_NAME
+
     mock_orchestrator = MagicMock()
     mock_orchestrator.run = AsyncMock(return_value={
         "decision_id": "dec-test-001",
@@ -45,15 +47,39 @@ def mock_server_deps():
         "drift_fields": 0,
     })
 
+    mock_index_manager = MagicMock()
+    mock_index_manager.index_status = AsyncMock(return_value={
+        "vector_index_present": True,
+        "vector_index_name": VECTOR_INDEX_NAME,
+        "all_indexes": [VECTOR_INDEX_NAME, "_id_"],
+        "total": 2,
+    })
+    mock_index_manager.ensure_vector_index = AsyncMock(return_value={"status": "exists", "index": VECTOR_INDEX_NAME})
+
+    mock_perf = MagicMock()
+    mock_perf.get_collection_stats = AsyncMock(return_value={
+        "collection": "decisions",
+        "document_count": 5,
+        "storage_size_bytes": 1024,
+        "avg_doc_size_bytes": 256,
+        "db_data_size_bytes": 2048,
+        "db_index_size_bytes": 512,
+    })
+    mock_perf.get_cluster_alerts = AsyncMock(return_value=[])
+
     server_module._orchestrator = mock_orchestrator
     server_module._recall = mock_recall
     server_module._harmonizer = mock_harmonizer
+    server_module._index_manager = mock_index_manager
+    server_module._perf_advisor = mock_perf
     server_module._pending = {}
 
     yield {
         "orchestrator": mock_orchestrator,
         "recall": mock_recall,
         "harmonizer": mock_harmonizer,
+        "index_manager": mock_index_manager,
+        "perf_advisor": mock_perf,
     }
 
 
@@ -187,3 +213,39 @@ class TestPendingEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 0
+
+
+class TestIndexEndpoints:
+    @pytest.mark.asyncio
+    async def test_index_status(self, client):
+        resp = await client.get("/indexes")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "vector_index_present" in data
+        assert data["vector_index_present"] is True
+
+    @pytest.mark.asyncio
+    async def test_ensure_indexes(self, client):
+        resp = await client.post("/indexes/ensure")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] in ("exists", "created")
+
+
+class TestStatsEndpoint:
+    @pytest.mark.asyncio
+    async def test_stats_returns_counts(self, client):
+        resp = await client.get("/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "document_count" in data
+        assert "storage_size_bytes" in data
+
+
+class TestAlertsEndpoint:
+    @pytest.mark.asyncio
+    async def test_alerts_empty(self, client):
+        resp = await client.get("/alerts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "alerts" in data

@@ -1,33 +1,42 @@
-"""CargoDB FastAPI server — exposes /health /run /decisions /approve endpoints."""
+"""CargoDB FastAPI server."""
 from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent.orchestrator import CargoDborchestrator
 from agent.specialists.memory_recall import MemoryRecall
 from agent.specialists.schema_harmonizer import SchemaHarmonizer
+from agent.specialists.index_manager import IndexManager
+from agent.specialists.performance_advisor import PerformanceAdvisor
 from agent.config import MONGODB_DB, MONGODB_COLLECTION
 
 _orchestrator: Optional[CargoDborchestrator] = None
 _recall: Optional[MemoryRecall] = None
-
-# In-flight decisions awaiting human approval
-_pending: dict[str, dict] = {}
 _harmonizer: Optional[SchemaHarmonizer] = None
+_index_manager: Optional[IndexManager] = None
+_perf_advisor: Optional[PerformanceAdvisor] = None
+
+_pending: dict[str, dict] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _orchestrator, _recall
-    global _harmonizer
+    global _orchestrator, _recall, _harmonizer, _index_manager, _perf_advisor
     _orchestrator = CargoDborchestrator()
     _recall = MemoryRecall()
     _harmonizer = SchemaHarmonizer()
+    _index_manager = IndexManager()
+    _perf_advisor = PerformanceAdvisor()
+    # Ensure vector search index exists — idempotent
+    try:
+        await _index_manager.ensure_vector_index()
+    except Exception:
+        pass  # Log but don't block startup if Atlas unreachable
     yield
 
 
@@ -84,7 +93,6 @@ async def approve_decision(payload: ApprovalPayload) -> dict:
     pending = _pending.pop(payload.decision_id)
     if not payload.approved:
         return {"decision_id": payload.decision_id, "status": "rejected", "approver": payload.approver}
-    # Persist now that human approved
     candidate = pending["candidate_decision"]
     candidate["approved_by"] = payload.approver
     await _orchestrator.memory_writer.write(candidate)
@@ -95,7 +103,6 @@ async def approve_decision(payload: ApprovalPayload) -> dict:
 async def list_decisions(decision_type: Optional[str] = None, limit: int = 20) -> dict:
     if _recall is None:
         raise HTTPException(503, "MemoryRecall not ready")
-    # Return recent decisions via a broad vector search with a generic query
     results = await _recall.find_similar(
         query_text="routing decision reroute strait closure",
         decision_type=decision_type,
@@ -116,6 +123,11 @@ async def similar_decisions(payload: SimilarQuery) -> dict:
     return {"decisions": results, "count": len(results)}
 
 
+@app.get("/decisions/pending")
+async def pending_decisions() -> dict:
+    return {"pending": list(_pending.values()), "count": len(_pending)}
+
+
 @app.get("/schema")
 async def schema_report() -> dict:
     if _harmonizer is None:
@@ -123,6 +135,44 @@ async def schema_report() -> dict:
     return await _harmonizer.analyze()
 
 
-@app.get("/decisions/pending")
-async def pending_decisions() -> dict:
-    return {"pending": list(_pending.values()), "count": len(_pending)}
+@app.get("/indexes")
+async def index_status() -> dict:
+    if _index_manager is None:
+        raise HTTPException(503, "IndexManager not ready")
+    return await _index_manager.index_status()
+
+
+@app.post("/indexes/ensure")
+async def ensure_indexes() -> dict:
+    if _index_manager is None:
+        raise HTTPException(503, "IndexManager not ready")
+    return await _index_manager.ensure_vector_index()
+
+
+@app.get("/stats")
+async def collection_stats() -> dict:
+    if _perf_advisor is None:
+        raise HTTPException(503, "PerformanceAdvisor not ready")
+    return await _perf_advisor.get_collection_stats()
+
+
+@app.get("/performance")
+async def performance_recommendations(
+    project_id: str = "",
+    cluster_name: str = "shipsafe-cluster",
+) -> dict:
+    if _perf_advisor is None:
+        raise HTTPException(503, "PerformanceAdvisor not ready")
+    pid = project_id or os.environ.get("ATLAS_PROJECT_ID", "")
+    if not pid:
+        raise HTTPException(400, "project_id required (or set ATLAS_PROJECT_ID env var)")
+    return await _perf_advisor.get_recommendations(project_id=pid, cluster_name=cluster_name)
+
+
+@app.get("/alerts")
+async def cluster_alerts(project_id: str = "") -> dict:
+    if _perf_advisor is None:
+        raise HTTPException(503, "PerformanceAdvisor not ready")
+    pid = project_id or os.environ.get("ATLAS_PROJECT_ID", "")
+    alerts = await _perf_advisor.get_cluster_alerts(project_id=pid)
+    return {"alerts": alerts, "count": len(alerts)}
