@@ -249,3 +249,44 @@ class TestAlertsEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "alerts" in data
+
+
+class TestPerformanceEndpoint:
+    @pytest.mark.asyncio
+    async def test_performance_with_project_id(self, client, mock_server_deps):
+        mock_server_deps["perf_advisor"].get_recommendations = AsyncMock(return_value={
+            "suggested_indexes": [],
+            "suggested_index_count": 0,
+            "slow_queries": [],
+            "slow_query_count": 0,
+            "has_recommendations": False,
+        })
+        resp = await client.get("/performance?project_id=proj-abc&cluster_name=shipsafe-cluster")
+        assert resp.status_code == 200
+        assert "has_recommendations" in resp.json()
+
+    @pytest.mark.asyncio
+    async def test_performance_missing_project_id_returns_400(self, client):
+        import agent.server as server_module
+        import os
+        env_bak = os.environ.pop("ATLAS_PROJECT_ID", None)
+        try:
+            resp = await client.get("/performance")
+            assert resp.status_code == 400
+        finally:
+            if env_bak:
+                os.environ["ATLAS_PROJECT_ID"] = env_bak
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_not_ready_returns_503(self, client):
+        import agent.server as server_module
+        orig = server_module._orchestrator
+        server_module._orchestrator = None
+        try:
+            resp = await client.post("/run", json={
+                "event_id": "e1", "event_type": "closure",
+                "vessels_affected": [], "severity": "LOW",
+            })
+            assert resp.status_code == 503
+        finally:
+            server_module._orchestrator = orig

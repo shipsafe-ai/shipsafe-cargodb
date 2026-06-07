@@ -7,11 +7,11 @@ variable "project_id" {
 variable "region" {
   description = "GCP region for Cloud Run"
   type        = string
-  default     = "asia-south1"
+  default     = "us-central1"
 }
 
 variable "gemini_model" {
   description = "Gemini model identifier (from config, not hardcoded in logic)"
   type        = string
-  default     = "gemini-2.0-flash-001"
+  default     = "gemini-2.5-flash"
 }

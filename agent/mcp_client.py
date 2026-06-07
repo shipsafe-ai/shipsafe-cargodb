@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
@@ -9,6 +10,33 @@ from mcp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 
 from agent.secrets import get_secret
+
+
+def _parse_mcp_content(text: str) -> Any:
+    """Extract JSON from MCP tool response text.
+
+    mongodb-mcp-server wraps document data in <untrusted-user-data-UUID> tags
+    and emits three tag pairs per response (two in warning text, one wrapping data).
+    The data pair is always the largest; find it by scanning all open/close positions
+    and taking the span with the most content.
+    """
+    opens = [m.end() for m in re.finditer(r"<untrusted-user-data-[^>]+>", text)]
+    closes = [m.start() for m in re.finditer(r"</untrusted-user-data-[^>]+>", text)]
+    best_content = ""
+    for o in opens:
+        for c in closes:
+            if c > o and len(text[o:c]) > len(best_content):
+                best_content = text[o:c].strip()
+                break
+    if best_content:
+        try:
+            return json.loads(best_content)
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
 
 
 def _try_secret(name: str) -> str:
@@ -76,15 +104,23 @@ class MongoMCPClient:
         self.collection_name = collection_name
 
     async def _call(self, tool: str, arguments: dict) -> Any:
-        async with _mcp_session() as session:
-            result = await session.call_tool(tool, arguments=arguments)
-            if result.content:
-                raw = result.content[0].text
-                try:
-                    return json.loads(raw)
-                except (json.JSONDecodeError, AttributeError):
-                    return raw
-            return None
+        from anyio import BrokenResourceError
+        _captured: list[Any] = []
+        try:
+            async with _mcp_session() as session:
+                result = await session.call_tool(tool, arguments=arguments)
+                # Use last content block — it contains the actual document data.
+                # Earlier blocks are summary/metadata text.
+                raw_text = result.content[-1].text if result.content else None
+                if raw_text:
+                    _captured.append(_parse_mcp_content(raw_text))
+                else:
+                    _captured.append(None)
+        except* BrokenResourceError:
+            # MCP subprocess exited after responding; cleanup task sees broken stream.
+            # Tool call already completed — result captured above.
+            pass
+        return _captured[0] if _captured else None
 
     # ── Core CRUD ────────────────────────────────────────────────────────────
 
@@ -155,7 +191,13 @@ class MongoMCPClient:
         })
         if isinstance(result, int):
             return result
-        return result.get("count", 0) if isinstance(result, dict) else 0
+        if isinstance(result, dict):
+            return result.get("count", 0)
+        # Parse "Found N documents..." plain-text response
+        if isinstance(result, str):
+            m = re.search(r"\d+", result)
+            return int(m.group()) if m else 0
+        return 0
 
     async def collection_storage_size(self) -> dict:
         result = await self._call("collection-storage-size", {

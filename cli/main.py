@@ -66,7 +66,7 @@ async def _run_demo(ctx: click.Context) -> None:
         url, data=body, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read())
     except Exception as e:
         click.echo(f"Demo failed: {e}", err=True)
@@ -115,7 +115,7 @@ def approve(ctx: click.Context, decision_id: str, approve: bool, approver: str) 
         url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read())
             action = "Approved" if approve else "Rejected"
             click.echo(f"{action}: {result['decision_id']} by {result['approver']}")
@@ -138,7 +138,7 @@ def search(ctx: click.Context, query: str, top_k: int) -> None:
         url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read())
     except Exception as e:
         click.echo(f"Search failed: {e}", err=True)

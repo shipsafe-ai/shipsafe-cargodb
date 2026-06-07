@@ -98,6 +98,28 @@ class TestMemoryWriterWrite:
             assert len(docs[0]["embedding"]) == 1024
 
 
+class TestEmbedTexts:
+    def test_embed_texts_calls_voyage_api(self):
+        """_embed_texts must call Voyage AI endpoint and return list of vectors."""
+        import json
+        from unittest.mock import patch, MagicMock
+        from agent.specialists.memory_writer import _embed_texts
+
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = json.dumps(
+            {"data": [{"embedding": [0.3] * 1024}, {"embedding": [0.7] * 1024}]}
+        ).encode()
+        fake_resp.__enter__ = lambda s: s
+        fake_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=fake_resp), \
+             patch("agent.specialists.memory_writer.get_secret", return_value="vk-test"):
+            result = _embed_texts(["text one", "text two"])
+        assert len(result) == 2
+        assert len(result[0]) == 1024
+        assert result[0][0] == 0.3
+
+
 class TestMemoryWriterPromptInjection:
     @pytest.mark.asyncio
     async def test_decision_text_sanitized(self, writer):

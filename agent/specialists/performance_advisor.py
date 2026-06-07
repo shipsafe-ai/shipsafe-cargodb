@@ -4,6 +4,7 @@ Uses atlas-get-performance-advisor tool. Requires Atlas API credentials.
 """
 from __future__ import annotations
 import os
+from typing import Optional
 
 from agent.config import MONGODB_DB, MONGODB_COLLECTION
 from agent.mcp_client import MongoMCPClient, _try_secret
@@ -28,11 +29,12 @@ class PerformanceAdvisor:
 
     async def get_recommendations(
         self,
-        project_id: str = "",
+        project_id: Optional[str] = None,
         cluster_name: str = _ATLAS_CLUSTER_NAME,
     ) -> dict:
-        project_id = project_id or _get_project_id()
         """Fetch suggested indexes, slow queries, schema suggestions."""
+        if project_id is None:
+            project_id = _get_project_id()
         raw = await self.mcp_client.atlas_performance_advisor(
             project_id=project_id, cluster_name=cluster_name
         )
@@ -62,10 +64,11 @@ class PerformanceAdvisor:
 
     async def get_cluster_alerts(
         self,
-        project_id: str = "",
+        project_id: Optional[str] = None,
     ) -> list[dict]:
-        project_id = project_id or _get_project_id()
         """Fetch active Atlas cluster alerts."""
+        if project_id is None:
+            project_id = _get_project_id()
         if not project_id:
             return []
         alerts = await self.mcp_client.atlas_list_alerts(project_id=project_id)

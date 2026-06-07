@@ -17,9 +17,18 @@ locals {
   image        = "${var.region}-docker.pkg.dev/${var.project_id}/shipsafe/${local.service_name}:latest"
 }
 
+resource "google_artifact_registry_repository" "shipsafe" {
+  location      = var.region
+  repository_id = "shipsafe"
+  format        = "DOCKER"
+  description   = "ShipSafe Docker images"
+}
+
 resource "google_cloud_run_v2_service" "cargodb" {
   name     = local.service_name
   location = var.region
+
+  depends_on = [google_artifact_registry_repository.shipsafe]
 
   template {
     containers {
@@ -38,7 +47,7 @@ resource "google_cloud_run_v2_service" "cargodb" {
         value = var.gemini_model
       }
 
-      # Secrets from Secret Manager — nothing hardcoded
+      # Secrets from Secret Manager — nothing hardcoded (rule 5)
       env {
         name = "MONGODB_ATLAS_URI"
         value_source {
@@ -58,10 +67,28 @@ resource "google_cloud_run_v2_service" "cargodb" {
         }
       }
       env {
-        name = "MDB_MCP_PREVIEW_FEATURES"
+        name = "MDB_MCP_API_CLIENT_ID"
         value_source {
           secret_key_ref {
-            secret  = "MDB_MCP_PREVIEW_FEATURES"
+            secret  = "MDB_MCP_API_CLIENT_ID"
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "MDB_MCP_API_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = "MDB_MCP_API_CLIENT_SECRET"
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "ATLAS_PROJECT_ID"
+        value_source {
+          secret_key_ref {
+            secret  = "ATLAS_PROJECT_ID"
             version = "latest"
           }
         }
@@ -70,7 +97,7 @@ resource "google_cloud_run_v2_service" "cargodb" {
       resources {
         limits = {
           cpu    = "2"
-          memory = "1Gi"
+          memory = "2Gi"
         }
       }
 
@@ -110,6 +137,14 @@ resource "google_project_iam_member" "vertex_user" {
   member  = "serviceAccount:${google_service_account.cargodb_sa.email}"
 }
 
+resource "google_artifact_registry_repository_iam_member" "sa_pusher" {
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.shipsafe.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.cargodb_sa.email}"
+}
+
 resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   project  = var.project_id
   location = var.region
@@ -120,4 +155,8 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
 
 output "service_url" {
   value = google_cloud_run_v2_service.cargodb.uri
+}
+
+output "image" {
+  value = local.image
 }

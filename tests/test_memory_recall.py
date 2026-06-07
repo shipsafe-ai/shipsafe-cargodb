@@ -96,6 +96,26 @@ class TestMemoryRecallQuery:
         src = inspect.getsource(mod)
         assert "openai" not in src.lower()
 
+    def test_embed_query_calls_voyage_api(self):
+        """_embed_query must call Voyage AI endpoint and return 1024-dim vector."""
+        import json
+        from io import BytesIO
+        from unittest.mock import patch, MagicMock
+        from agent.specialists.memory_recall import _embed_query
+
+        fake_resp = MagicMock()
+        fake_resp.read.return_value = json.dumps(
+            {"data": [{"embedding": [0.5] * 1024}]}
+        ).encode()
+        fake_resp.__enter__ = lambda s: s
+        fake_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=fake_resp), \
+             patch("agent.specialists.memory_recall.get_secret", return_value="vk-test"):
+            result = _embed_query("test query")
+        assert len(result) == 1024
+        assert result[0] == 0.5
+
     @pytest.mark.asyncio
     async def test_recall_embeds_query_before_vectorsearch(self, recall, similar_doc):
         """find_similar must embed query_text before building $vectorSearch."""
