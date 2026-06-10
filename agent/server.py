@@ -1,5 +1,6 @@
 """CargoDB FastAPI server."""
 from __future__ import annotations
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -8,8 +9,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from agent.ais_stream import get_conflict_events, register_decision_callback, start_ais_feed
 from agent.orchestrator import CargoDborchestrator
 from agent.specialists.memory_recall import MemoryRecall
+from agent.specialists.memory_writer import MemoryWriter
 from agent.specialists.schema_harmonizer import SchemaHarmonizer
 from agent.specialists.index_manager import IndexManager
 from agent.specialists.performance_advisor import PerformanceAdvisor
@@ -32,11 +35,25 @@ async def lifespan(app: FastAPI):
     _harmonizer = SchemaHarmonizer()
     _index_manager = IndexManager()
     _perf_advisor = PerformanceAdvisor()
-    # Ensure vector search index exists — idempotent
     try:
         await _index_manager.ensure_vector_index()
     except Exception:
-        pass  # Log but don't block startup if Atlas unreachable
+        pass
+
+    # Wire AIS events → MemoryWriter so real vessel data builds Atlas memory
+    _writer = MemoryWriter()
+
+    async def _on_ais_decision(decision: dict) -> None:
+        try:
+            await _writer.run(decision)
+        except Exception:
+            pass
+
+    register_decision_callback(_on_ais_decision)
+
+    ais_key = os.environ.get("AISSTREAM_API_KEY", "")
+    if ais_key:
+        asyncio.create_task(start_ais_feed(ais_key))
     yield
 
 
@@ -113,13 +130,8 @@ async def approve_decision(payload: ApprovalPayload) -> dict:
 
 @app.get("/decisions")
 async def list_decisions(decision_type: Optional[str] = None, limit: int = 20) -> dict:
-    if _recall is None:
-        raise HTTPException(503, "MemoryRecall not ready")
-    results = await _recall.find_similar(
-        query_text="routing decision reroute strait closure",
-        decision_type=decision_type,
-        top_k=limit,
-    )
+    from agent.db import list_decisions as _db_list
+    results = await _db_list(limit=limit, decision_type=decision_type)
     return {"decisions": results, "count": len(results)}
 
 
@@ -188,3 +200,15 @@ async def cluster_alerts(project_id: str = "") -> dict:
     pid = project_id or os.environ.get("ATLAS_PROJECT_ID", "")
     alerts = await _perf_advisor.get_cluster_alerts(project_id=pid)
     return {"alerts": alerts, "count": len(alerts)}
+
+
+@app.get("/ais")
+async def ais_conflict_events() -> dict:
+    """Live AIS vessel conflict events feeding into Atlas memory via MemoryWriter."""
+    events = get_conflict_events()
+    return {
+        "conflict_events": events,
+        "count": len(events),
+        "description": "Real AIS position reports triggering Atlas Vector Search memory writes",
+        "source": "aisstream.io",
+    }

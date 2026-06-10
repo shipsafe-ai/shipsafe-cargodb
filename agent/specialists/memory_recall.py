@@ -77,3 +77,13 @@ class MemoryRecall:
         ]
 
         return await self.mcp_client.aggregate(pipeline=pipeline)
+
+    async def find_all(self, limit: int = 20, decision_type: str | None = None) -> list[dict]:
+        """Simple list — no Voyage AI embed call, no vector search. Fast."""
+        f: dict = {}
+        if decision_type:
+            f["decision_type"] = decision_type
+        docs = await self.mcp_client.find(filter=f, limit=limit)
+        for doc in docs:
+            doc.pop("embedding", None)
+        return docs

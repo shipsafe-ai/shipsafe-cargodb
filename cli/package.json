@@ -1,0 +1,13 @@
+{
+  "name": "shipsafe-cargodb",
+  "version": "0.1.0",
+  "description": "ShipSafe Cargodb CLI \u2014 powered by MongoDB Atlas",
+  "type": "module",
+  "bin": {
+    "cargodb": "./bin/cargodb.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

@@ -22,6 +22,12 @@ export default function Home() {
       {/* Header */}
       <header className="border-b border-border bg-bg-surface px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <a href="https://shipsafe-landing-o34wppiwiq-uc.a.run.app"
+             className="text-xs font-mono text-muted hover:text-text-secondary transition-colors"
+             style={{ textDecoration: 'none' }}>
+            ← ShipSafe
+          </a>
+          <span className="text-muted" style={{ fontSize: 10 }}>·</span>
           <span className="text-cargo-accent font-mono text-lg font-semibold tracking-tight">
             CargoDB
           </span>
@@ -54,12 +60,12 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Content */}
+      {/* Content — always mounted, hidden via CSS to prevent refetch on tab switch */}
       <main className="p-6">
-        {tab === "memory" && <MemoryBrowser />}
-        {tab === "similarity" && <VectorSimilarity />}
-        {tab === "schema" && <SchemaDriftPanel />}
-        {tab === "pending" && <PendingApprovals />}
+        <div className={tab === "memory" ? "" : "hidden"}><MemoryBrowser /></div>
+        <div className={tab === "similarity" ? "" : "hidden"}><VectorSimilarity /></div>
+        <div className={tab === "schema" ? "" : "hidden"}><SchemaDriftPanel /></div>
+        <div className={tab === "pending" ? "" : "hidden"}><PendingApprovals /></div>
       </main>
     </div>
   );

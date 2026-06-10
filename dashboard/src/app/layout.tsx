@@ -6,6 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CargoDB — Agent Memory",
   description: "Persistent semantic memory for AI agents via MongoDB Atlas",
+  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 
 export default function RootLayout({
