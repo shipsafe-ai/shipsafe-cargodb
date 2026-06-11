@@ -29,6 +29,8 @@ That is CargoDB. It is the shared memory layer the rest of an agent fleet reads
 from — every decision, trace, and outcome captured once and recalled by
 similarity whenever it is relevant again.
 
+![Without CargoDB agents start from zero and every crisis is the first crisis; with CargoDB they recall via Atlas Vector Search and Gemini reasons over the precedents](docs/problem-solution.png)
+
 ---
 
 ## How it works
@@ -66,6 +68,8 @@ Two distinct capabilities, kept deliberately separate:
 Every decision carries a confidence score, a rationale, and the reasoner's
 chain-of-thought (captured and surfaced in the response and dashboard — not
 auto-executed). Nothing is persisted until a human approves.
+
+![Recall is Atlas Vector Search; Gemini reasons over the precedents to decide — crisis event to vector search to the DecisionReasoner to a Gemini Critic to the human gate](docs/gemini-data-flow.png)
 
 ---
 
@@ -115,14 +119,15 @@ python -m cli.main search "strait closure reroute"
 python -m cli.main approve <decision_id> --approver you
 ```
 
-> **Note:** the npm wrapper `npx shipsafe-cargodb` exposes `init`/`health` (it
-> prints the deployed URLs and runs a health check); its `demo` command is a
-> thin shim and is not the supported demo path. Use the dashboard, the `curl`
-> above, or the Python CLI.
+> **npm CLI:** `npx shipsafe-cargodb <init|demo|connect|health>`. `demo` runs the
+> Hormuz scenario against the deployed agent and prints the recommended action +
+> Gemini rationale; `connect --uri <atlas-uri>` points it at your own Atlas.
 
 ---
 
 ## Architecture
+
+![System architecture — a Next.js dashboard and a FastAPI agent on Cloud Run, Gemini on Vertex AI, the MongoDB MCP, and MongoDB Atlas Vector Search fed by Voyage AI embeddings and live AIS telemetry](docs/architecture-overview.png)
 
 ### Pipeline (orchestrated by a Google ADK `SequentialAgent`)
 
@@ -139,6 +144,8 @@ python -m cli.main approve <decision_id> --approver you
 `IndexManager` (ensures `decisions_vector_idx` exists on startup) and
 `PerformanceAdvisor` (Atlas slow-query / suggested-index / alerts surfacing) are
 exposed as standalone Atlas-ops endpoints, not pipeline steps.
+
+![CargoDB pipeline — MemoryRecall, ManifestAuditor, SchemaHarmonizer and MigrationGuardian over the MongoDB MCP, then a Gemini DecisionReasoner and Critic, gated by a human before MemoryWriter persists to Atlas](docs/architecture-pipeline.png)
 
 ### MongoDB MCP integration (real, over stdio)
 
