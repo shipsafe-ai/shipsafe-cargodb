@@ -13,7 +13,7 @@ AI agents are brilliant and amnesiac. Every run starts from zero. The agent that
 
 Keyword search doesn't fix it: two decisions can be the *same* decision in different words — "hold the shipment" vs. "delay departure pending review" — and an exact-match index will never connect them. What agents need is **semantic recall over their own decision history** — retrieval by meaning, not by string. That's CargoDB.
 
-![Problem vs solution](problem-solution.png)
+![Problem vs solution](https://raw.githubusercontent.com/shipsafe-ai/shipsafe-cargodb/main/docs/problem-solution.png)
 
 ## What it does
 
@@ -32,11 +32,11 @@ Seven specialists on **Google ADK**, on **Cloud Run**, with **Gemini on Vertex A
 
 **System architecture:**
 
-![System architecture](architecture-overview.png)
+![System architecture](https://raw.githubusercontent.com/shipsafe-ai/shipsafe-cargodb/main/docs/architecture-overview.png)
 
 **The pipeline** — `MemoryRecall → ManifestAuditor → SchemaHarmonizer → MigrationGuardian → DecisionReasoner (Gemini) → Critic (Gemini) → MemoryWriter`:
 
-![Multi-agent pipeline](architecture-pipeline.png)
+![Multi-agent pipeline](https://raw.githubusercontent.com/shipsafe-ai/shipsafe-cargodb/main/docs/architecture-pipeline.png)
 
 ```mermaid
 flowchart TD
@@ -58,7 +58,7 @@ flowchart TD
 
 **Recall is vector search; Gemini reasons over the precedents to decide:**
 
-![Gemini reasoning flow](gemini-data-flow.png)
+![Gemini reasoning flow](https://raw.githubusercontent.com/shipsafe-ai/shipsafe-cargodb/main/docs/gemini-data-flow.png)
 
 CargoDB talks to Atlas through the official **`mongodb-mcp-server` over stdio** — `aggregate` (carries the `$vectorSearch` pipeline), `insert-many`, `find`, `create-index`, `explain`, `atlas-get-performance-advisor`, and more — the same MCP tooling an agent uses in production. Embeddings are Voyage AI (`voyage-3.5-lite`, 1024-dim cosine on `decisions_vector_idx`).
 
